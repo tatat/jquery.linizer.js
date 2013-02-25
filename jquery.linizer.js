@@ -638,7 +638,7 @@ _Point.prototype.props = {
   , pageX: 'px'
   , pageY: 'py'
   , clientX: 'cx'
-  , clientY: 'xy'
+  , clientY: 'cy'
   , offsetX: 'ox'
   , offsetY: 'oy'
 };
