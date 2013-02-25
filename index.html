@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Test</title>
+  <style>
+    #box1 {
+      width: 200px;
+      height: 150px;
+      background-color: #666;
+      margin: 10px;
+      position: relative;
+    }
+
+    #box2 {
+      width: 200px;
+      height: 150px;
+      background-color: #888;
+      margin: 10px;
+      margin-left: 100px;
+      margin-top: -100px;
+      position: relative;
+    }
+
+    #box3 {
+      width: 200px;
+      height: 150px;
+      background-color: #aaa;
+      margin: 10px;
+      margin-left: 200px;
+      margin-top: -100px;
+      position: relative;
+    }
+  </style>
+  <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.js"></script>
+  <script src="./jquery.linizer.js"></script>
+  <script>
+    $(function() {
+      $('#box1, #box2, #box3')
+        .linize({
+            event_start: 'start'
+          , event_move: 'move'
+          , event_end: 'end'
+          , descendant_or_self: true
+          , ignore_history: true
+        })
+        .on('start', function(jq_event, e) {
+          e.stop()
+            .singlize()
+            .set('start_x', e.$context.data('current_x') || 0)
+            .set('start_y', e.$context.data('current_y') || 0);
+
+          console.log('start', e.context.id);
+        })
+        .on('move', function(jq_event, e) {
+          e.stop();
+
+          var first = e.first()
+            , x = e.get('start_x') + (e.px - first.px)
+            , y = e.get('start_y') + (e.py - first.py);
+
+          e.$context
+            .css('transform', 'translate(' + x + 'px,' + y + 'px)')
+            .data({
+                'current_x': x
+              , 'current_y': y
+            });
+        })
+        .on('end', function(jq_event, e) {
+          e.stop();
+          console.log('end', e.context.id);
+        });
+    });
+  </script>
+</head>
+<body>
+  <div id="box1"></div>
+  <div id="box2"></div>
+  <div id="box3"></div>
+</body>
+</html>
