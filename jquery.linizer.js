@@ -1,19 +1,17 @@
 !function($) {
+'use strict';
 
-var __contains = function(dest, source) {
-  if (source === dest)
-    return true;
+/* #################### Requirements ####################
+ * + jQuery
+ * + Object.keys
+ * + Array.prototype.indexOf
+ * + Element.prototype.getBoundingClientRect
+ * ######################################################
+ * */
 
-  var current = source;
-
-  do {
-    current = current.parentNode;
-  } while (current && current !== dest);
-
-  return !! current;
-};
-
-var supports_touch = 'createTouch' in document
+var div = document.createElement('div')
+  , supports_touch = 'createTouch' in document
+  , supports_get_bounding_client_rect = typeof div.getBoundingClientRect !== 'undefined'
   , namespace = 'linizer'
   , event_map = supports_touch ? {
       'start': 'touchstart.' + namespace
@@ -26,6 +24,8 @@ var supports_touch = 'createTouch' in document
     , 'end': 'mouseup.' + namespace
     , 'cancel': null
   };
+
+div = null;
 
 var defaults = {
     event_start: 'start'
@@ -69,7 +69,7 @@ Linizer.watchers = (function(self) {
 
       self.each(function(id, params) {
         if (params.options.descendant_or_self) {
-          if (!__contains(params.element, p.target))
+          if (params.element !== p.target && !$.contains(params.element, p.target))
             return;
         } else if (!params.includes(p.x, p.y)) {
           return;
@@ -415,14 +415,18 @@ var _Params = function(element, options) {
   this.update();
 };
 
-_Params.prototype.update = function() {
-  var $element = this.$element
-    , offset = $element.offset();
+_Params.prototype.update = supports_get_bounding_client_rect ? function () {
+  var rect = this.element.getBoundingClientRect();
 
-  this.x = offset.left;
-  this.y = offset.top;
-  this.width = $element.width();
-  this.height = $element.height();
+  this.x = rect.left;
+  this.y = rect.top;
+  this.width = rect.width;
+  this.height = rect.height;
+} : function () {
+  this.x = 0; // unsupported.
+  this.y = 0; // unsupported.
+  this.width = this.$element.width();
+  this.height = this.$element.height();
 };
 
 _Params.prototype.includes = function(target_x, target_y) {
