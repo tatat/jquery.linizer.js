@@ -38,6 +38,7 @@
             event_start: 'start'
           , event_move: 'move'
           , event_end: 'end'
+          , event_cancel: 'cancel'
           , descendant_or_self: true
           , ignore_history: true
         })
@@ -53,7 +54,7 @@
                 .set('y', this.get('start_y') + (this.py - first.py));
             });
 
-          console.log('start', e.context.id);
+          console.log(e.current_event_type, e.context.id);
         })
         .on('move', function(jq_event, e) {
           e.stop()
@@ -61,16 +62,18 @@
             .$context
               .css('transform', 'translate(' + e.get('x') + 'px,' + e.get('y') + 'px)');
         })
-        .on('end', function(jq_event, e) {
-          e.stop()
-            .call('set_point')
+        .on('end cancel', function(jq_event, e) {
+          if (e.current_event_type !== 'cancel')
+            e.stop();
+
+          e.call('set_point')
             .$context
               .data({
                 'current_x': e.get('x')
               , 'current_y': e.get('y')
               });
 
-          console.log('end', e.context.id);
+          console.log(e.current_event_type, e.context.id);
         });
     });
   </script>

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Test</title>
+  <title>Draw</title>
   <style>
     #canvas1,
     #canvas-container {
@@ -42,8 +42,8 @@
           context.lineWidth = 10;
 
           e.stop()
-            .set(e.identifier, function() {
-              var before = this.before();
+            .set_local('draw', function() {
+              var before = this.get('before');
 
               if (!before || before.x === this.x && before.y === this.y) {
                 context.beginPath();
@@ -55,17 +55,32 @@
                 context.lineTo(this.x, this.y);
                 context.stroke();
               }
+
+              this.set('before', this);
             })
-            .call(e.identifier);
+            .call_local('draw');
         })
         .on('move', function(jq_event, e) {
           e.stop()
-            .call(e.identifier);
+            .call_local('draw');
         })
         .on('end', function(jq_event, e) {
           e.stop()
-            .call(e.identifier);
+            .call_local('draw');
         });
+
+      $('#clear-canvas1').on('mouseup touchend', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        var canvas = $('#canvas1').get(0)
+          , context = canvas.getContext('2d');
+
+        context.clearRect(0, 0, canvas.width, canvas.height);
+      }).on('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      });
 
       !function() {
         var main_canvas = $('#canvas2').get(0)
@@ -85,13 +100,14 @@
         var draw = function(context, e) {
           e.stop();
 
-          var first = e.first();
+          var history = e.history
+            , first = e.first();
 
           context.beginPath();
 
           if (
-            e.history.length === 1 ||
-            e.history.length === 2 &&
+            history.length === 1 ||
+            history.length === 2 &&
               first.x === e.x &&
               first.y === e.y
           ) {
@@ -100,11 +116,19 @@
           } else {
             context.moveTo(first.x, first.y);
 
-            e.history.forEach(function(point) {
+            history.forEach(function(point) {
               context.lineTo(point.x, point.y);
             });
 
             context.stroke();
+          }
+        };
+
+        var draw_each = function(e) {
+          if (e.current_event_type === 'end') {
+            draw(main_context, e);
+          } else if (e.current_event_type !== 'cancel') {
+            draw(sub_context, e);
           }
         };
 
@@ -114,27 +138,39 @@
             , event_each_move: 'eachmove'
             , event_each_end: 'eachend'
             , event_end: 'end'
+            , event_cancel: 'cancel'
             , descendant_or_self: true
             , ignore_history: false
           })
-          .on('eachstart eachmove eachend', function(jq_event, events) {
+          .on('eachstart eachmove eachend eachcancel', function(jq_event, events) {
             sub_context.clearRect(0, 0, sub_canvas.width, sub_canvas.height);
-
-            events.each(function(e) {
-              if (e.current_event_type === 'end') {
-                draw(main_context, e);
-              } else {
-                draw(sub_context, e);
-              }
-            });
+            events.each(draw_each);
           });
+
+        $('#clear-canvas2').on('mouseup touchend', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          [
+            [main_canvas, main_context]
+          , [sub_canvas, sub_context]
+          ].forEach(function(c) {
+              c[1].clearRect(0, 0, c[0].width, c[0].height);
+            });
+        }).on('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+        });
       }();
     });
   </script>
 </head>
 <body>
+  <h1>Simple</h1>
+  <p><a href="#" id="clear-canvas1">Clear</a></p>
   <canvas id="canvas1" width="800" height="600"></canvas>
-
+  <h1>Alpha Channel</h1>
+  <p><a href="#" id="clear-canvas2">Clear</a></p>
   <div id="canvas-container">
     <canvas id="canvas2" width="800" height="600"></canvas>
     <canvas id="canvas3" width="800" height="600"></canvas>

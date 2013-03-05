@@ -24,7 +24,7 @@ var div = document.createElement('div')
     'start': 'mousedown.' + namespace
   , 'move': 'mousemove.' + namespace
   , 'end': 'mouseup.' + namespace
-  , 'cancel': null
+  , 'cancel': 'contextmenu.' + namespace
   };
 
 div = null;
@@ -33,9 +33,11 @@ var defaults = {
   event_each_start: 'eachstart'
 , event_each_move: 'eachmove'
 , event_each_end: 'eachend'
+, event_each_cancel: 'eachcancel'
 , event_start: 'start'
 , event_move: 'move'
 , event_end: 'end'
+, event_cancel: 'cancel'
 , descendant_or_self: true
 , ignore_history: false
 };
@@ -55,7 +57,7 @@ var Linizer = {
 Linizer.watchers = (function(self) {
   var watchers = {};
 
-  var handle = function(events, analyze) {
+  var trigger_start = function(events, analyze) {
     var result = []
       , target_params = {}
       , params
@@ -89,13 +91,9 @@ Linizer.watchers = (function(self) {
       });
     }
 
-    for (n in target_params) {
-      params = target_params[n];
+    trigger_each('event_each_start', target_params, function(params) {
       params.started = true;
-
-      if (params.event_each_start != null)
-        self.trigger(params.$element, params.event_each_start, params.events);
-    }
+    });
 
     for (i = 0, j = result.length; i < j; i ++) {
       p = result[i];
@@ -115,7 +113,66 @@ Linizer.watchers = (function(self) {
     }
   };
 
+  var trigger_each = function(each_type, target_params, before_callback) {
+    var params;
+
+    for (var n in target_params) {
+      params = target_params[n];
+      before_callback && before_callback(params);
+
+      if (params[each_type] != null)
+        self.trigger(params.$element, params[each_type], params.events);
+    }
+  };
+
   if (supports_touch) {
+    var filter = function(type, e, touches, current_events, target_params) {
+      var touch
+        , events
+        , event
+        , params;
+
+      for (var i = 0, j = touches.length, ii, jj; i < j; i ++) {
+        touch = touches[i];
+
+        if (!self.current_events.hasOwnProperty(touch.identifier))
+          continue;
+
+        events = self.current_events[touch.identifier].slice();
+
+        for (ii = 0, jj = events.length; ii < jj; ii ++) {
+          event = events[ii];
+          params = event.params;
+          current_events.push(event.add(params[type], e, touch));
+          target_params[params.id] = params;
+        }
+      }
+    };
+
+    var trigger = function(type, events, after_callback) {
+      var event
+        , params;
+
+      for (var i = 0, j = events.length; i < j; i ++) {
+        event = events[i];
+        params = event.params;
+
+        if (params[type] != null)
+          self.trigger(params.$element, params[type], event);
+
+        after_callback && after_callback(event, params);
+      }
+    };
+
+    var end = function(event, params) {
+      self.destroy(event.identifier, params);
+
+      if (Object.keys(params.current_events).length === 0) {
+        params.started = false;
+        params.first_event = null;
+      }
+    };
+
     watchers[event_map['start']] = function(e) {
       var touches = e.originalEvent.changedTouches
         , events = [];
@@ -133,7 +190,7 @@ Linizer.watchers = (function(self) {
         });
       }
 
-      handle(events, function(e, params, touch) {
+      trigger_start(events, function(e, params, touch) {
         var events = params.current_events
           , event = params.first_event
           , identifier = touch.identifier
@@ -168,98 +225,34 @@ Linizer.watchers = (function(self) {
     };
 
     watchers[event_map['move']] = function(e) {
-      var touches = e.originalEvent.changedTouches
-        , current_events = []
-        , target_params = {}
-        , event
-        , events
-        , touch
-        , params;
+      var current_events = []
+        , target_params = {};
 
-      for (var i = 0, j = touches.length, ii, jj; i < j; i ++) {
-        touch = touches[i];
-
-        if (!self.current_events.hasOwnProperty(touch.identifier))
-          continue;
-
-        events = self.current_events[touch.identifier];
-
-        for (ii = 0, jj = events.length; ii < jj; ii ++) {
-          event = events[ii]
-          params = event.params;
-          current_events.push(event.add(params.event_move, e, touch));
-          target_params[params.id] = params;
-        }
-      }
-
-      for (var n in target_params) {
-        params = target_params[n];
-
-        if (params.event_each_move != null)
-          self.trigger(params.$element, params.event_each_move, params.events);
-      }
-
-      for (i = 0, j = current_events.length; i < j; i ++) {
-        event = current_events[i];
-        params = event.params;
-
-        if (params.event_move != null)
-          self.trigger(params.$element, params.event_move, event);
-      }
+      filter('event_move', e, e.originalEvent.changedTouches, current_events, target_params);
+      trigger_each('event_each_move', target_params);
+      trigger('event_move', current_events);
     };
 
     watchers[event_map['end']] = function(e) {
-      var touches = e.originalEvent.changedTouches
-        , current_events = []
-        , target_params = {}
-        , event
-        , events
-        , touch
-        , params;
+      var current_events = []
+        , target_params = {};
 
-      for (var i = 0, j = touches.length, ii, jj; i < j; i ++) {
-        touch = touches[i];
-
-        if (!self.current_events.hasOwnProperty(touch.identifier))
-          continue;
-
-        events = self.current_events[touch.identifier].slice();
-
-        for (ii = 0, jj = events.length; ii < jj; ii ++) {
-          event = events[ii];
-          params = event.params;
-          current_events.push(event.add(params.event_end, e, touch));
-          target_params[params.id] = params;
-        }
-      }
-
-      for (var n in target_params) {
-        params = target_params[n];
-
-        if (params.event_each_end != null)
-          self.trigger(params.$element, params.event_each_end, params.events);
-      }
-
-      for (i = 0, j = current_events.length; i < j; i ++) {
-        event = current_events[i];
-        params = event.params;
-
-        if (params.event_end != null)
-          self.trigger(params.$element, params.event_end, event);
-
-        self.destroy(event.identifier, params);
-
-        if (Object.keys(params.current_events).length === 0) {
-          params.started = false;
-          params.first_event = null;
-        }
-      }
+      filter('event_end', e, e.originalEvent.changedTouches, current_events, target_params);
+      trigger_each('event_each_end', target_params);
+      trigger('event_end', current_events, end);
     };
 
-    watchers[event_map['cancel']] = watchers[event_map['end']];
+    watchers[event_map['cancel']] = function() {
+      var current_events = []
+        , target_params = {};
+
+      filter('event_cancel', e, e.originalEvent.changedTouches, current_events, target_params);
+      trigger_each('event_each_cancel', target_params);
+      trigger('event_cancel', current_events, end);
+    };
   } else {
     watchers[event_map['start']] = function(e) {
-      handle([
+      trigger_start([
         {
           event: e
         , $element: self.search(e.target)
@@ -268,6 +261,9 @@ Linizer.watchers = (function(self) {
         , target: e.target
         }
       ], function(e, params) {
+        if(params.started)
+          return;
+
         var events = params.current_events
           , current_event_type = params.event_start
           , event = new _Event(current_event_type, params, e)
@@ -277,38 +273,51 @@ Linizer.watchers = (function(self) {
         self.current_events[identifier] = [event];
         params.first_event = event;
 
-        var move_handler = function(e) {
-          var current_event_type = params.event_move;
-          events[identifier].add(current_event_type, e);
+        var trigger = function(e, event_type, each_event_type) {
+          events[identifier].add(params[event_type], e);
 
-          if (params.event_each_move != null)
-            self.trigger(params.$element, params.event_each_move, params.events);
+          if (params[each_event_type] != null)
+            self.trigger(params.$element, params[each_event_type], params.events);
 
-          if (current_event_type != null)
-            self.trigger(params.$element, current_event_type, events[identifier]);
+          if (params[event_type] != null)
+            self.trigger(params.$element, params[event_type], events[identifier]);
         };
 
-        var end_handler = function(e) {
-          var current_event_type = params.event_end;
-          events[identifier].add(current_event_type, e);
-
-          if (params.event_each_end != null)
-            self.trigger(params.$element, params.event_each_end, params.events);
-
-          if (current_event_type != null)
-            self.trigger(params.$element, current_event_type, events[identifier]);
-
-          self.destroy(identifier, params);
-
+        var end = function() {
           self.$doc.off(event_map['move'], move_handler)
-            .off(event_map['end'], end_handler);
+            .off(event_map['end'], end_handler)
+            .off(event_map['cancel'], cancel_handler);
 
           params.started = false;
           params.first_event = null;
         };
 
+        var move_handler = function(e) {
+          if (!events[identifier])
+            return end();
+
+          trigger(e, 'event_move', 'event_each_move');
+        };
+
+        var end_handler = function(e) {
+          if (events[identifier]) {
+            trigger(e, 'event_end', 'event_each_end');
+            self.destroy(identifier, params);
+          }
+
+          end();
+        };
+
+        var cancel_handler = function(e) {
+          if (events[identifier])
+            trigger(e, 'event_cancel', 'event_each_cancel');
+
+          end();
+        };
+
         self.$doc.on(event_map['move'], move_handler)
-          .on(event_map['end'], end_handler);
+          .on(event_map['end'], end_handler)
+          .on(event_map['cancel'], cancel_handler);
 
         return {
           type: current_event_type
@@ -518,7 +527,7 @@ var _Params = function(id, element, options) {
   this.$element = $(element);
   this.element = this.$element.get(0);
 
-  'start move end each_start each_move each_end'
+  'start move end cancel each_start each_move each_end each_cancel'
     .split(' ')
     .forEach(function(event_type) {
       var name = 'event_' + event_type;
@@ -634,6 +643,24 @@ _Event.prototype.add = function(current_event_type, jq_event, e) {
   this.current_event_type = current_event_type;
 
   return this;
+};
+
+_Event.prototype.set_local = function(key, value) {
+  this.current.set(key, value);
+  return this;
+};
+
+_Event.prototype.get_local = function(key, default_value) {
+  return this.current.get(key, default_value);
+};
+
+_Event.prototype.unset_local = function(key) {
+  this.current.unset(key);
+  return this;
+};
+
+_Event.prototype.call_local = function(key, args) {
+  return this.current.call(key, args);
 };
 
 !function(data) {
