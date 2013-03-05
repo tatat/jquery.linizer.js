@@ -4,47 +4,52 @@
 /* #################### Requirements ####################
  * + jQuery
  * + Object.keys
+ * + Array.prototype.forEach
  * + Array.prototype.indexOf
  * + Element.prototype.getBoundingClientRect
  * ######################################################
  * */
 
 var div = document.createElement('div')
+  , _$win = $(window)
   , supports_touch = 'createTouch' in document
   , supports_get_bounding_client_rect = typeof div.getBoundingClientRect !== 'undefined'
   , namespace = 'linizer'
   , event_map = supports_touch ? {
-      'start': 'touchstart.' + namespace
-    , 'move': 'touchmove.' + namespace
-    , 'end': 'touchend.' + namespace
-    , 'cancel': 'touchcancel.' + namespace
+    'start': 'touchstart.' + namespace
+  , 'move': 'touchmove.' + namespace
+  , 'end': 'touchend.' + namespace
+  , 'cancel': 'touchcancel.' + namespace
   } : {
-      'start': 'mousedown.' + namespace
-    , 'move': 'mousemove.' + namespace
-    , 'end': 'mouseup.' + namespace
-    , 'cancel': null
+    'start': 'mousedown.' + namespace
+  , 'move': 'mousemove.' + namespace
+  , 'end': 'mouseup.' + namespace
+  , 'cancel': null
   };
 
 div = null;
 
 var defaults = {
-    event_start: 'start'
-  , event_move: 'move'
-  , event_end: 'end'
-  , descendant_or_self: true
-  , ignore_history: false
+  event_each_start: 'eachstart'
+, event_each_move: 'eachmove'
+, event_each_end: 'eachend'
+, event_start: 'start'
+, event_move: 'move'
+, event_end: 'end'
+, descendant_or_self: true
+, ignore_history: false
 };
 
 var Linizer = {
-    defaults: defaults
-  , event_map: event_map
-  , is_watching: false
-  , watching: {}
-  , indexes: []
-  , uniq_id: 0
-  , id_key: namespace + '.watching_id'
-  , current_events: {}
-  , $doc: $(document)
+  defaults: defaults
+, event_map: event_map
+, is_watching: false
+, watching: {}
+, indexes: []
+, uniq_id: 0
+, id_key: namespace + '.watching_id'
+, current_events: {}
+, $doc: $(document)
 };
 
 Linizer.watchers = (function(self) {
@@ -52,7 +57,7 @@ Linizer.watchers = (function(self) {
 
   var handle = function(events, analyze) {
     var result = []
-      , target_params
+      , target_params = {}
       , params
       , p
       , n;
@@ -76,8 +81,20 @@ Linizer.watchers = (function(self) {
         }
 
         var analyzed = analyze(p.event, params, p.touch);
-        analyzed && result.push(analyzed);
+
+        if (analyzed) {
+          result.push(analyzed);
+          target_params[params.id] = params;
+        }
       });
+    }
+
+    for (n in target_params) {
+      params = target_params[n];
+      params.started = true;
+
+      if (params.event_each_start != null)
+        self.trigger(params.$element, params.event_each_start, params.events);
     }
 
     for (i = 0, j = result.length; i < j; i ++) {
@@ -92,7 +109,7 @@ Linizer.watchers = (function(self) {
 
         if (p.event !== params.first_event)
           params.first_event = p.event;
-      } else {
+      } else if (p.type != null) {
         self.trigger(p.$element, p.type, p.event);
       }
     }
@@ -107,30 +124,31 @@ Linizer.watchers = (function(self) {
         touch = touches[i];
 
         events.push({
-            event: e
-          , $element: self.search(touch.target)
-          , x: touch.pageX
-          , y: touch.pageY
-          , target: touch.target
-          , touch: touch
+          event: e
+        , $element: self.search(touch.target)
+        , x: touch.pageX
+        , y: touch.pageY
+        , target: touch.target
+        , touch: touch
         });
       }
 
       handle(events, function(e, params, touch) {
         var events = params.current_events
           , event = params.first_event
-          , identifier = touch.identifier;
+          , identifier = touch.identifier
+          , current_event_type = params.event_start;
 
         if (events.hasOwnProperty(identifier))
           return;
 
         if (event == null) {
-          event = new _Event(params, e, touch);
+          event = new _Event(current_event_type, params, e, touch);
           params.first_event = event;
         } else if (event.singlized) {
           return;
         } else {
-          event = event.dup(e, touch);
+          event = event.dup(current_event_type, e, touch);
         }
 
         events[identifier] = event;
@@ -141,10 +159,10 @@ Linizer.watchers = (function(self) {
         self.current_events[identifier].push(event);
 
         return {
-            type: params.options.event_start
-          , event: event
-          , $element: params.$element
-          , params: params
+          type: current_event_type
+        , event: event
+        , $element: params.$element
+        , params: params
         };
       });
     };
@@ -152,6 +170,7 @@ Linizer.watchers = (function(self) {
     watchers[event_map['move']] = function(e) {
       var touches = e.originalEvent.changedTouches
         , current_events = []
+        , target_params = {}
         , event
         , events
         , touch
@@ -165,20 +184,34 @@ Linizer.watchers = (function(self) {
 
         events = self.current_events[touch.identifier];
 
-        for (ii = 0, jj = events.length; ii < jj; ii ++)
-          current_events.push(events[ii].add(e, touch));
+        for (ii = 0, jj = events.length; ii < jj; ii ++) {
+          event = events[ii]
+          params = event.params;
+          current_events.push(event.add(params.event_move, e, touch));
+          target_params[params.id] = params;
+        }
+      }
+
+      for (var n in target_params) {
+        params = target_params[n];
+
+        if (params.event_each_move != null)
+          self.trigger(params.$element, params.event_each_move, params.events);
       }
 
       for (i = 0, j = current_events.length; i < j; i ++) {
         event = current_events[i];
         params = event.params;
-        self.trigger(params.$element, params.options.event_move, event);
+
+        if (params.event_move != null)
+          self.trigger(params.$element, params.event_move, event);
       }
     };
 
     watchers[event_map['end']] = function(e) {
       var touches = e.originalEvent.changedTouches
         , current_events = []
+        , target_params = {}
         , event
         , events
         , touch
@@ -194,15 +227,27 @@ Linizer.watchers = (function(self) {
 
         for (ii = 0, jj = events.length; ii < jj; ii ++) {
           event = events[ii];
-          self.destroy(touch.identifier, event.params);
-          current_events.push(event.add(e, touch));
+          params = event.params;
+          current_events.push(event.add(params.event_end, e, touch));
+          target_params[params.id] = params;
         }
+      }
+
+      for (var n in target_params) {
+        params = target_params[n];
+
+        if (params.event_each_end != null)
+          self.trigger(params.$element, params.event_each_end, params.events);
       }
 
       for (i = 0, j = current_events.length; i < j; i ++) {
         event = current_events[i];
         params = event.params;
-        self.trigger(params.$element, params.options.event_end, event);
+
+        if (params.event_end != null)
+          self.trigger(params.$element, params.event_end, event);
+
+        self.destroy(event.identifier, params);
 
         if (Object.keys(params.current_events).length === 0) {
           params.started = false;
@@ -216,15 +261,16 @@ Linizer.watchers = (function(self) {
     watchers[event_map['start']] = function(e) {
       handle([
         {
-            event: e
-          , $element: self.search(e.target)
-          , x: e.pageX
-          , y: e.pageY
-          , target: e.target
+          event: e
+        , $element: self.search(e.target)
+        , x: e.pageX
+        , y: e.pageY
+        , target: e.target
         }
       ], function(e, params) {
         var events = params.current_events
-          , event = new _Event(params, e)
+          , current_event_type = params.event_start
+          , event = new _Event(current_event_type, params, e)
           , identifier = '';
 
         events[identifier] = event;
@@ -232,16 +278,30 @@ Linizer.watchers = (function(self) {
         params.first_event = event;
 
         var move_handler = function(e) {
-          self.trigger(params.$element, params.options.event_move, events[identifier].add(e));
+          var current_event_type = params.event_move;
+          events[identifier].add(current_event_type, e);
+
+          if (params.event_each_move != null)
+            self.trigger(params.$element, params.event_each_move, params.events);
+
+          if (current_event_type != null)
+            self.trigger(params.$element, current_event_type, events[identifier]);
         };
 
         var end_handler = function(e) {
-          self.trigger(params.$element, params.options.event_end, events[identifier].add(e));
+          var current_event_type = params.event_end;
+          events[identifier].add(current_event_type, e);
+
+          if (params.event_each_end != null)
+            self.trigger(params.$element, params.event_each_end, params.events);
+
+          if (current_event_type != null)
+            self.trigger(params.$element, current_event_type, events[identifier]);
+
+          self.destroy(identifier, params);
 
           self.$doc.off(event_map['move'], move_handler)
             .off(event_map['end'], end_handler);
-
-          self.destroy(identifier, params);
 
           params.started = false;
           params.first_event = null;
@@ -250,9 +310,12 @@ Linizer.watchers = (function(self) {
         self.$doc.on(event_map['move'], move_handler)
           .on(event_map['end'], end_handler);
 
-        self.trigger(params.$element, params.options.event_start, event);
-
-        params.started = true;
+        return {
+          type: current_event_type
+        , event: event
+        , $element: params.$element
+        , params: params
+        };
       });
     };
   }
@@ -267,7 +330,7 @@ Linizer.add = function(element, options) {
   var id = this.uniq_id ++;
   $(element).data(this.id_key, id);
 
-  this.watching[id] = new _Params(element, $.extend({}, defaults, options));
+  this.watching[id] = new _Params(id, element, $.extend({}, defaults, options));
 
   return this;
 };
@@ -401,46 +464,6 @@ Linizer.canceler = function(jq_event, e) {
   e.stop();
 };
 
-var _Params = function(element, options) {
-  this.$element = $(element);
-  this.element = this.$element.get(0);
-  this.options = options;
-  this.x = 0;
-  this.y = 0;
-  this.width = 0;
-  this.height = 0;
-  this.started = false;
-  this.first_event = null;
-  this.current_events = {};
-  this.update();
-};
-
-_Params.prototype.update = supports_get_bounding_client_rect ? function () {
-  var rect = this.element.getBoundingClientRect();
-
-  this.x = rect.left;
-  this.y = rect.top;
-  this.width = rect.width;
-  this.height = rect.height;
-} : function () {
-  this.x = 0; // unsupported.
-  this.y = 0; // unsupported.
-  this.width = this.$element.width();
-  this.height = this.$element.height();
-};
-
-_Params.prototype.includes = function(target_x, target_y) {
-  var start_x = this.x
-    , start_y = this.y;
-
-  return target_x >= start_x &&
-    target_x <= (start_x + this.width) &&
-    target_y >= start_y &&
-    target_y <= (start_y + this.height);
-};
-
-Linizer.Params = _Params;
-
 
 var _DataStore = function() {
   this.data = {};
@@ -490,10 +513,78 @@ _DataStore.prototype.call = function(key, args) {
 Linizer.DataStore = _DataStore;
 
 
+var _Params = function(id, element, options) {
+  this.id = id;
+  this.$element = $(element);
+  this.element = this.$element.get(0);
+
+  'start move end each_start each_move each_end'
+    .split(' ')
+    .forEach(function(event_type) {
+      var name = 'event_' + event_type;
+      this[name] = options[name];
+    }, this);
+
+  this.options = options;
+  this.x = 0;
+  this.y = 0;
+  this.width = 0;
+  this.height = 0;
+  this.started = false;
+  this.first_event = null;
+  this.current_events = {};
+  this.events = new _Events(this.current_events);
+  this.update();
+};
+
+_Params.prototype.update = supports_get_bounding_client_rect ? function () {
+  var rect = this.element.getBoundingClientRect();
+
+  this.x = rect.left + _$win.scrollLeft();
+  this.y = rect.top + _$win.scrollTop();
+  this.width = rect.width;
+  this.height = rect.height;
+} : function () {
+  this.x = 0; // unsupported.
+  this.y = 0; // unsupported.
+  this.width = this.$element.width();
+  this.height = this.$element.height();
+};
+
+_Params.prototype.includes = function(target_x, target_y) {
+  var start_x = this.x
+    , start_y = this.y;
+
+  return target_x >= start_x &&
+    target_x <= (start_x + this.width) &&
+    target_y >= start_y &&
+    target_y <= (start_y + this.height);
+};
+
+Linizer.Params = _Params;
+
+
+var _Events = function(events) {
+  this.events = events;
+};
+
+_DataStore.mixin(_Events.prototype);
+
+_Events.prototype.each = function(callback) {
+  for (var n in this.events)
+    if (false === callback.call(this, this.events[n], n))
+      break;
+
+  return this;
+};
+
+Linizer.Events = _Events;
+
+
 var _Event = (function() {
   var uniq_id = 0;
 
-  return function(params, jq_event, e, events, data) {
+  return function(current_event_type, params, jq_event, e, events, data) {
     e = e || jq_event;
 
     this.created_at = $.now();
@@ -506,6 +597,7 @@ var _Event = (function() {
     this.history = [];
     this.current = null;
     this.jq_event_type = null;
+    this.current_event_type = null;
     this.px = 0;
     this.py = 0;
     this.x = 0;
@@ -518,7 +610,7 @@ var _Event = (function() {
 
     this.events[this.identifier] = this;
 
-    this.add(jq_event, e);
+    this.add(current_event_type, jq_event, e);
   };
 })();
 
@@ -526,7 +618,7 @@ _Event.data = {};
 
 _DataStore.mixin(_Event.prototype);
 
-_Event.prototype.add = function(jq_event, e) {
+_Event.prototype.add = function(current_event_type, jq_event, e) {
   var point = new _Point(this.params, jq_event, e, this.current && this.current.data);
   
   if (this.ignore_history)
@@ -539,6 +631,7 @@ _Event.prototype.add = function(jq_event, e) {
   this.px = point.px;
   this.py = point.py;
   this.jq_event_type = jq_event.type;
+  this.current_event_type = current_event_type;
 
   return this;
 };
@@ -566,8 +659,8 @@ _Event.prototype.add = function(jq_event, e) {
   };
 }(_Event.data);
 
-_Event.prototype.dup = function(jq_event, e) {
-  return new _Event(this.params, jq_event, e, this.events, this.data);
+_Event.prototype.dup = function(current_event_type, jq_event, e) {
+  return new _Event(current_event_type, this.params, jq_event, e, this.events, this.data);
 };
 
 _Event.prototype.stop = function() {
@@ -635,16 +728,16 @@ var _Point = function(params, jq_event, e, data) {
 };
 
 _Point.prototype.props = {
-    identifier: 'identifier'
-  , target: 'target'
-  , screenX: 'sx'
-  , screenY: 'sy'
-  , pageX: 'px'
-  , pageY: 'py'
-  , clientX: 'cx'
-  , clientY: 'cy'
-  , offsetX: 'ox'
-  , offsetY: 'oy'
+  identifier: 'identifier'
+, target: 'target'
+, screenX: 'sx'
+, screenY: 'sy'
+, pageX: 'px'
+, pageY: 'py'
+, clientX: 'cx'
+, clientY: 'cy'
+, offsetX: 'ox'
+, offsetY: 'oy'
 };
 
 _DataStore.mixin(_Point.prototype);
@@ -653,8 +746,8 @@ Linizer.Point = _Point;
 
 
 Linizer.options = {
-    auto_watch: true
-  , auto_unwatch: true
+  auto_watch: true
+, auto_unwatch: true
 };
 
 $.Linizer = Linizer;
